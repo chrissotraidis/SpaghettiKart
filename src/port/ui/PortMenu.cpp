@@ -5,6 +5,7 @@
 #endif
 #include "UIWidgets.h"
 #include "engine/mods/ModManager.h"
+#include "engine/mods/ModCatalog.h"
 #include "port/Engine.h"
 #include "port/Game.h"
 #include "ship/window/gui/GuiMenuBar.h"
@@ -465,109 +466,57 @@ int32_t motionBlurStrength;
 void PortMenu::AddEnhancements() {
     AddMenuEntry("Enhancements", "gSettings.Menu.EnhancementsSidebarSection");
 #ifdef __IOS__
-    WidgetPath texturePath = { "Enhancements", "Texture Packs", SECTION_COLUMN_1 };
-    AddSidebarEntry("Enhancements", "Texture Packs", 1);
-    AddWidget(texturePath,
-              "Optional visual upgrade. Enhanced or HD texture packs replace the original artwork; they are not "
-              "required to play.",
+    WidgetPath modsPath = { "Enhancements", "Mods", SECTION_COLUMN_1 };
+    AddSidebarEntry("Enhancements", "Mods", 1);
+    AddWidget(modsPath,
+              "Choose installed packs. Changes are saved and take effect when you relaunch. "
+              "Character packs can layer over HD textures; packs replacing the same racers cannot be combined.",
               WIDGET_TEXT);
-    AddWidget(texturePath, "Use Enhanced / HD Texture Pack", WIDGET_CVAR_CHECKBOX)
-        .CVar("gSettings.SpaghettiPad.ImportedTexturePack")
-        .PreFunc([](WidgetInfo& info) {
-            const bool loaded = IsImportedO2RModLoaded();
-            info.options->disabled = !loaded;
-            info.options->disabledTooltip =
-                loaded ? "" : "Import an optional enhanced/HD .o2r pack and relaunch SpaghettiPad first.";
-        })
-        .Callback([](WidgetInfo& info) {
-            const bool requestedEnabled =
-                CVarGetInteger("gSettings.SpaghettiPad.ImportedTexturePack", 1);
-            const bool currentEnabled = IsImportedO2RModEnabled();
-            if (requestedEnabled == currentEnabled) {
-                return;
-            }
-
-            if (GameEngine::ShowYesNoBox(
-                    "Relaunch required",
-                    "Changing the texture pack requires relaunching SpaghettiPad. "
-                    "Close the app now and apply this change?\n\n"
-                    "Reopen SpaghettiPad manually from the Home Screen. "
-                    "Current race progress will be lost. Saved game data is preserved.") == IDYES) {
+    AddWidget(modsPath, "Installed packs", WIDGET_CUSTOM).CustomFunction([](WidgetInfo&) {
+        const auto& mods = GetImportedMods();
+        if (mods.empty()) ImGui::TextWrapped("No optional packs installed. Your original game still works.");
+        for (size_t i = 0; i < mods.size(); ++i) {
+            const auto& mod = mods[i];
+            ImGui::PushID(mod.filename.c_str());
+            bool enabled = mod.requested;
+            const auto reason = ImportedModBlockReason(i);
+            ImGui::BeginDisabled(!enabled && !reason.empty());
+            if (ImGui::Checkbox(mod.filename.c_str(), &enabled)) SetImportedModEnabled(i, enabled);
+            ImGui::EndDisabled();
+            ImGui::TextWrapped("%s", mod.name.c_str());
+            ImGui::TextDisabled("%s", mod.active ? "Active now" : "Off now");
+            if (mod.requested != mod.active) ImGui::TextWrapped("%s after relaunch", mod.requested ? "On" : "Off");
+            if (!reason.empty() && !enabled) ImGui::TextWrapped("%s", reason.c_str());
+            ImGui::Separator();
+            ImGui::PopID();
+        }
+    });
+    AddWidget(modsPath, "Check for New Packs", WIDGET_BUTTON)
+        .Callback([](WidgetInfo&) { ScanImportedMods(); })
+        .Options(ButtonOptions().Tooltip("Refresh the installed pack list without interrupting this race."));
+    AddWidget(modsPath, "Apply Changes and Close", WIDGET_BUTTON)
+        .PreFunc([](WidgetInfo& info) { info.options->disabled = !ImportedModsNeedRestart(); })
+        .Callback([](WidgetInfo&) {
+            if (GameEngine::ShowYesNoBox("Apply mods on relaunch",
+                "Close SpaghettiPad to apply your selected packs? Reopen it from the Home Screen. "
+                "Current race progress will be lost. Saved game data is preserved.") == IDYES) {
                 CVarSetInteger("gOpenMenu", 0);
                 CVarSave();
                 Ship::Context::GetInstance()->GetWindow()->Close();
-                return;
             }
-
-            CVarSetInteger("gSettings.SpaghettiPad.ImportedTexturePack", currentEnabled);
-            Ship::Context::GetInstance()
-                ->GetWindow()
-                ->GetGui()
-                ->SaveConsoleVariablesNextFrame();
-        })
-        .Options(CheckboxOptions()
-                     .DefaultValue(true)
-                     .Tooltip("Switches between the original graphics and the optional enhanced/HD pack after a "
-                              "restart."));
-    AddWidget(texturePath, "Status: Checking...", WIDGET_TEXT)
-        .PreFunc([](WidgetInfo& info) {
-            info.name = GetImportedO2RModStatusText(
-                CVarGetInteger("gSettings.SpaghettiPad.ImportedTexturePack", 1));
         });
-    AddWidget(texturePath, "Check Again", WIDGET_BUTTON)
-        .Callback([](WidgetInfo& info) {
-            RefreshImportedO2RModStatus();
-            if (!HasImportedO2RMod()) {
-                GameEngine::ShowMessage(
-                    "No texture pack found",
-                    "No optional texture pack is installed. SpaghettiPad will continue using the original graphics.\n\n"
-                    "To add one, copy an official SpaghettiKart .o2r into Files > On My iPad or "
-                    "iPhone > SpaghettiPad > mods, then return here.",
-                    SDL_MESSAGEBOX_INFORMATION);
-                return;
-            }
-            if (!IsImportedO2RModLoaded()) {
-                GameEngine::ShowMessage(
-                    "Texture pack detected",
-                    "The archive is valid. Relaunch SpaghettiPad once to load it.",
-                    SDL_MESSAGEBOX_INFORMATION);
-                return;
-            }
-            if (!CVarGetInteger("gSettings.SpaghettiPad.ImportedTexturePack", 1) &&
-                GameEngine::ShowYesNoBox(
-                    "Texture pack loaded",
-                    "Enable the enhanced/HD texture pack and close SpaghettiPad now?\n\n"
-                    "Reopen SpaghettiPad manually from the Home Screen.") == IDYES) {
-                CVarSetInteger("gSettings.SpaghettiPad.ImportedTexturePack", 1);
-                CVarSetInteger("gOpenMenu", 0);
-                CVarSave();
-                Ship::Context::GetInstance()->GetWindow()->Close();
-                return;
-            }
-            GameEngine::ShowMessage(
-                "Texture pack loaded",
-                "Use the switch above to change between original and imported textures. "
-                "SpaghettiPad will ask before closing to apply the change.",
-                SDL_MESSAGEBOX_INFORMATION);
-        })
-        .Options(ButtonOptions().Tooltip("Rechecks the Files-visible mods folder."));
-    AddWidget(texturePath, "Installation Instructions", WIDGET_BUTTON)
-        .Callback([](WidgetInfo& info) {
-            GameEngine::ShowMessage(
-                "Install an optional HD texture pack",
-                "This visual upgrade is optional and separate from the Mario Kart 64 game archive.\n\n"
-                "1. Download the SpaghettiKart HD .o2r from the official MK64 Reloaded page.\n"
-                "2. In Files, move it to On My iPad or iPhone > SpaghettiPad > mods.\n"
-                "3. Relaunch SpaghettiPad once, then use the switch above.\n\n"
-                "Use HD first. Try 4K only on an M-series iPad.",
-                SDL_MESSAGEBOX_INFORMATION);
-        })
-        .Options(ButtonOptions().Tooltip("Shows the Files path and device guidance."));
-    AddWidget(texturePath, "Open Official MK64 Reloaded Page", WIDGET_BUTTON)
-        .Callback([](WidgetInfo& info) {
-            SDL_OpenURL("https://evilgames.eu/texture-packs/mk64-reloaded.htm");
-        })
-        .Options(ButtonOptions().Tooltip("Opens the pack author's official page in Safari."));
+    AddWidget(modsPath, "How to Add Packs", WIDGET_BUTTON)
+        .Callback([](WidgetInfo&) {
+            GameEngine::ShowMessage("Add SpaghettiKart mods",
+                "Copy compatible .o2r or .zip packs into Files > On My iPhone or iPad > SpaghettiPad > mods. "
+                "Then tap Check for New Packs here. New character packs start off.\n\n"
+                "Use packs made for SpaghettiKart 1.0. Original game archives, emulator packs and ROM hacks "
+                "are not optional mods. Older character packs need conversion first.", SDL_MESSAGEBOX_INFORMATION);
+        });
+    AddWidget(modsPath, "Ocarina NPC Racers — Author Page", WIDGET_BUTTON)
+        .Callback([](WidgetInfo&) { SDL_OpenURL("https://gamebanana.com/mods/701263"); });
+    AddWidget(modsPath, "Get MK64 Reloaded Textures", WIDGET_BUTTON)
+        .Callback([](WidgetInfo&) { SDL_OpenURL("https://evilgames.eu/texture-packs/mk64-reloaded.htm"); });
 #endif
     WidgetPath path = { "Enhancements", "General", SECTION_COLUMN_1 };
     AddSidebarEntry("Enhancements", "General", 3);

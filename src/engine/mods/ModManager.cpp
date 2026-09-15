@@ -12,6 +12,7 @@
 #include <string>
 
 #include "ModManager.h"
+#include "ModCatalog.h"
 
 void CheckMK64O2RExists();
 void FindAndLoadMods();
@@ -21,12 +22,6 @@ void DetectOutdatedDependencies();
 void SortModsByDependencies();
 
 std::vector<std::tuple<ModMetadata, std::shared_ptr<Ship::Archive>>> Mods = {};
-
-static bool sImportedO2RDetected = false;
-static bool sImportedO2RLoaded = false;
-static bool sImportedO2REnabled = false;
-static std::string sImportedO2RDisplayName;
-static std::filesystem::path sImportedO2RPath;
 
 static bool IsUsableGameArchive(const std::string& path) {
     int errorCode = 0;
@@ -40,56 +35,12 @@ static bool IsUsableGameArchive(const std::string& path) {
     return hasManifest;
 }
 
-static std::optional<std::filesystem::path> FindImportedO2RMod() {
-    const std::filesystem::path modsPath =
-        Ship::Context::GetPathRelativeToAppDirectory("mods");
-    std::error_code error;
-    if (!std::filesystem::is_directory(modsPath, error)) {
-        return std::nullopt;
-    }
-
-    for (std::filesystem::directory_iterator iterator(modsPath, error), end;
-         !error && iterator != end; iterator.increment(error)) {
-        if (iterator->is_regular_file(error) &&
-            StringHelper::IEquals(iterator->path().extension().string(), ".o2r") &&
-            IsUsableGameArchive(iterator->path().string())) {
-            return iterator->path();
-        }
-    }
-    return std::nullopt;
-}
-
-void RefreshImportedO2RModStatus() {
-    sImportedO2RDetected = false;
-    sImportedO2RLoaded = false;
-    sImportedO2RDisplayName.clear();
-    sImportedO2RPath.clear();
-
-    const auto importedPath = FindImportedO2RMod();
-    if (!importedPath.has_value()) {
-        return;
-    }
-
-    sImportedO2RDetected = true;
-    sImportedO2RDisplayName = importedPath->filename().string();
-    const auto normalizedPath = importedPath->lexically_normal();
-    sImportedO2RPath = normalizedPath;
-    for (const auto& [metadata, archive] : Mods) {
-        if (archive == nullptr ||
-            std::filesystem::path(archive->GetPath()).lexically_normal() != normalizedPath) {
-            continue;
-        }
-        sImportedO2RLoaded = archive->IsLoaded();
-        if (!metadata.name.empty()) {
-            sImportedO2RDisplayName = metadata.name;
-        }
-        break;
-    }
-}
-
 void InitModsSystem() {
     CheckMK64O2RExists();
 
+#ifdef __IOS__
+    ScanImportedMods(true);
+#endif
     FindAndLoadMods();
 
     PrintModInfo();
@@ -99,34 +50,17 @@ void InitModsSystem() {
     DetectOutdatedDependencies();
 
     SortModsByDependencies();
-    RefreshImportedO2RModStatus();
-
-    const bool enableImportedTexturePack =
-        CVarGetInteger("gSettings.SpaghettiPad.ImportedTexturePack", 1);
     std::vector<std::shared_ptr<Ship::Archive>> loadedArchives;
-    loadedArchives.reserve(Mods.size());
-    for (const auto& [_, archive] : Mods) {
-        if (archive == nullptr) {
-            continue;
-        }
-        if (!enableImportedTexturePack && !sImportedO2RPath.empty() &&
-            std::filesystem::path(archive->GetPath()).lexically_normal() == sImportedO2RPath) {
-            continue;
-        }
-        loadedArchives.push_back(archive);
-    }
-    auto context = GameEngine::Instance->context;
-    auto resourceManager = context->GetResourceManager();
-    auto archiveManager = resourceManager->GetArchiveManager();
+    for (const auto& [_, archive] : Mods) if (archive) loadedArchives.push_back(archive);
+    auto archiveManager = GameEngine::Instance->context->GetResourceManager()->GetArchiveManager();
     archiveManager->SetArchives(std::make_shared<std::vector<std::shared_ptr<Ship::Archive>>>(loadedArchives));
-    sImportedO2REnabled =
-        sImportedO2RDetected && sImportedO2RLoaded && enableImportedTexturePack;
+#ifdef __IOS__
+    MarkImportedModsActive();
+#endif
 }
 
 void UnloadMods() {
     Mods.clear();
-    sImportedO2REnabled = false;
-    RefreshImportedO2RModStatus();
 }
 
 // These bail-outs all run during InitModsSystem(), i.e. before the game world is set up.
@@ -175,6 +109,10 @@ std::vector<std::string> ListMods() {
         archiveFiles.push_back(assets_path);
     }
 
+#ifdef __IOS__
+    const auto selected = SelectedImportedModPaths();
+    archiveFiles.insert(archiveFiles.end(), selected.begin(), selected.end());
+#else
     const std::string mods_path = Ship::Context::GetPathRelativeToAppDirectory("mods");
 
     // Create mods folder if it doesn't exist
@@ -192,36 +130,8 @@ std::vector<std::string> ListMods() {
         }
     }
 
+#endif
     return archiveFiles;
-}
-
-bool HasImportedO2RMod() {
-    return sImportedO2RDetected;
-}
-
-bool IsImportedO2RModLoaded() {
-    return sImportedO2RLoaded;
-}
-
-bool IsImportedO2RModEnabled() {
-    return sImportedO2REnabled;
-}
-
-std::string GetImportedO2RModStatusText(bool requestedEnabled) {
-    if (!sImportedO2RDetected) {
-        return "Status: Original graphics (no optional pack installed)";
-    }
-    if (!sImportedO2RLoaded) {
-        return "Status: Detected - relaunch required\n" + sImportedO2RDisplayName;
-    }
-    if (requestedEnabled != sImportedO2REnabled) {
-        return "Status: Restart required - will turn " +
-            std::string(requestedEnabled ? "on\n" : "off\n") +
-            sImportedO2RDisplayName;
-    }
-    return "Status: Loaded - currently " +
-        std::string(sImportedO2REnabled ? "on\n" : "off\n") +
-        sImportedO2RDisplayName;
 }
 
 std::optional<std::vector<std::string>> CheckCyclicDependencies() {
@@ -271,7 +181,7 @@ void SortModsByDependencies() {
     // Core assets that should always be loaded first (at the bottom of the priority stack)
     static const std::vector<std::string> coreAssets = { "mk64-assets", "extended-assets" };
 
-    std::sort(Mods.begin(), Mods.end(),
+    std::stable_sort(Mods.begin(), Mods.end(),
               [](const std::tuple<ModMetadata, std::shared_ptr<Ship::Archive>>& a,
                  const std::tuple<ModMetadata, std::shared_ptr<Ship::Archive>>& b) {
                   const ModMetadata& metaA = std::get<0>(a);
