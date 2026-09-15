@@ -74,12 +74,19 @@ void ScanImportedMods(bool startup) {
             const auto table = toml::parse(text);
             const auto name = table["mod"]["name"].value<std::string>();
             const auto version = table["mod"]["version"].value<std::string>();
-            semver::version<int, int, int> parsed;
-            if (!name || name->empty() || !version || !semver::parse(*version, parsed))
+            if (!name || name->empty() || !version || version->empty())
                 throw std::runtime_error("Invalid pack name or version in mods.toml.");
             mod.name = *name;
             if (mod.name == "mk64-assets" || mod.name == "extended-assets" || mod.name == "spaghettikart-core")
                 throw std::runtime_error("Optional packs cannot replace core archive metadata.");
+            // Pack labels may use calendar versions (the existing HD pack does).
+            // Only dependency constraints need strict semantic version parsing.
+            if (auto* deps = table["dependencies"].as_table()) for (const auto& [key, value] : *deps) {
+                const auto constraint = value.value<std::string>();
+                semver::range_set<int, int, int> parsed;
+                if (!constraint || !semver::parse(*constraint, parsed))
+                    throw std::runtime_error("Invalid dependency version constraint.");
+            }
             metadata[mod.path] = ModMetadata::LoadFromTOML(text);
             if (mod.resources.keys.empty()) throw std::runtime_error("No supported replacement resources found.");
             for (const auto& key : mod.resources.keys) {
