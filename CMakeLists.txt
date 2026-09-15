@@ -31,10 +31,8 @@ endif()
 set(SPAGHETTIKART_IOS OFF)
 if(IOS OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
   set(SPAGHETTIKART_IOS ON)
-  set(PLATFORM "OS64")
-  include(cmake/ios.toolchain.cmake)
-  set(CMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "YOUR_TEAM_ID")
-  set(PROJECT_ID "dev.net64.game")
+  add_compile_options("-ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
+  add_compile_options("-ffile-prefix-map=${CMAKE_BINARY_DIR}=build-ios")
 endif()
 
 # Toggle for GLES (Required for many ARM/Mobile platforms)
@@ -116,14 +114,14 @@ list(FILTER ALL_FILES EXCLUDE REGEX ".*.inc.c")
 list(FILTER ALL_FILES EXCLUDE REGEX "./src/debug/crash_screen_enhancement.c")
 
 if(SPAGHETTIKART_IOS)
-  set(IOS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/libultraship/ios)
-
-  set(STORYBOARD_FILE ${IOS_DIR}/Launch.storyboard)
-  set(IMAGE_FILES ${IOS_DIR}/PoweredBy.png)
-  set(ICON_FILES ${IOS_DIR}/Icon.png)
-
-  list(APPEND ALL_FILES ${STORYBOARD_FILE} ${IMAGE_FILES} ${ICON_FILES})
-
+  if(NOT EXISTS "${SPAGHETTIPAD_SHELL_DIR}/SpaghettiPadShell.mm")
+    message(FATAL_ERROR
+      "Set SPAGHETTIPAD_SHELL_DIR to the repo-owned iOS shell directory")
+  endif()
+  if(NOT EXISTS "${SPAGHETTIPAD_PORT_ARCHIVE}")
+    message(FATAL_ERROR
+      "Set SPAGHETTIPAD_PORT_ARCHIVE to the ROM-free spaghetti.o2r")
+  endif()
 endif()
 
 add_executable(${PROJECT_NAME} ${ALL_FILES})
@@ -135,14 +133,64 @@ target_include_directories(
 target_compile_definitions(${PROJECT_NAME} PRIVATE YAML_CPP_STATIC_DEFINE)
 
 if(SPAGHETTIKART_IOS)
-  target_compile_definitions(${PROJECT_NAME} PRIVATE PLATFORM_IOS=1)
-  set_xcode_property(${PROJECT_NAME} PRODUCT_BUNDLE_IDENTIFIER ${PROJECT_ID}
-                     All)
+  target_compile_definitions(${PROJECT_NAME}
+    PRIVATE PLATFORM_IOS=1 __IOS__ MA_NO_DEVICE_IO)
+  target_include_directories(${PROJECT_NAME}
+    PRIVATE "${SPAGHETTIPAD_SHELL_DIR}")
+  set_source_files_properties(src/port/Game.cpp
+    PROPERTIES COMPILE_DEFINITIONS main=SDL_main)
+
+  target_sources(${PROJECT_NAME} PRIVATE
+    "${SPAGHETTIPAD_SHELL_DIR}/SpaghettiPadShell.mm"
+    "${SPAGHETTIPAD_SHELL_DIR}/Assets.xcassets"
+    "${SPAGHETTIPAD_PORT_ARCHIVE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config.yml"
+    "${CMAKE_CURRENT_SOURCE_DIR}/yamls"
+    "${CMAKE_CURRENT_SOURCE_DIR}/meta")
+  target_link_libraries(${PROJECT_NAME} PRIVATE "-framework CoreMotion")
+  set_source_files_properties(
+    "${SPAGHETTIPAD_SHELL_DIR}/Assets.xcassets"
+    "${SPAGHETTIPAD_PORT_ARCHIVE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/config.yml"
+    "${CMAKE_CURRENT_SOURCE_DIR}/yamls"
+    "${CMAKE_CURRENT_SOURCE_DIR}/meta"
+    PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+
+  set(CONTROLLER_DB_COMMIT "03d390c37b1342fcb7d8d294cd9621ab9d640bb3")
+  set(CONTROLLER_DB_SHA256
+    "eb002773dc8a16aa96f9ee2609798e231a9deb60c45e21fbdd4e221c9e8b7d77")
+  set(CONTROLLER_DB_PATH "${CMAKE_BINARY_DIR}/gamecontrollerdb.txt")
+  file(DOWNLOAD
+    "https://raw.githubusercontent.com/mdqinc/SDL_GameControllerDB/${CONTROLLER_DB_COMMIT}/gamecontrollerdb.txt"
+    "${CONTROLLER_DB_PATH}"
+    EXPECTED_HASH SHA256=${CONTROLLER_DB_SHA256}
+    TLS_VERIFY ON)
+  target_sources(${PROJECT_NAME} PRIVATE "${CONTROLLER_DB_PATH}")
+  set_source_files_properties("${CONTROLLER_DB_PATH}"
+    PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+
+  set(BUNDLE_ID "com.chrissotraidis.spaghettipad" CACHE STRING
+    "iOS application bundle identifier")
+  set(DEVELOPMENT_TEAM "" CACHE STRING "Apple development team")
+  set(SPAGHETTIPAD_VERSION "0.1.0" CACHE STRING "Application version")
+  set(SPAGHETTIPAD_BUILD_NUMBER "1" CACHE STRING "Application build number")
+  configure_file(
+    "${SPAGHETTIPAD_SHELL_DIR}/Info.plist.in"
+    "${CMAKE_BINARY_DIR}/ios/Info.plist"
+    @ONLY)
   set_target_properties(
     ${PROJECT_NAME}
-    PROPERTIES MACOSX_BUNDLE TRUE
-               MACOSX_BUNDLE_INFO_PLIST ${IOS_DIR}/plist.in
-               RESOURCE "${IMAGE_FILES};${STORYBOARD_FILE};${ICON_FILES}")
+    PROPERTIES
+      OUTPUT_NAME "SpaghettiPad"
+      MACOSX_BUNDLE TRUE
+      MACOSX_BUNDLE_INFO_PLIST "${CMAKE_BINARY_DIR}/ios/Info.plist"
+      XCODE_ATTRIBUTE_CLANG_ENABLE_OBJC_ARC YES
+      XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${BUNDLE_ID}"
+      XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${DEVELOPMENT_TEAM}"
+      XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
+      XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME "AppIcon"
+      XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+      XCODE_ATTRIBUTE_SKIP_INSTALL "NO")
 endif()
 
 include(cmake/SetFlags.cmake)
@@ -204,17 +252,20 @@ endif()
 # ##############################################################################
 
 
-add_custom_command(
-  TARGET ${PROJECT_NAME}
-  POST_BUILD
-  COMMENT "Copying asset yamls..."
-  COMMAND
-    ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
-    -DDESTINATION_DIR=$<TARGET_FILE_DIR:${PROJECT_NAME}>
-    -P ${CMAKE_SOURCE_DIR}/cmake/StageRuntimeFiles.cmake
-  VERBATIM)
+if(NOT SPAGHETTIKART_IOS)
+  add_custom_command(
+    TARGET ${PROJECT_NAME}
+    POST_BUILD
+    COMMENT "Copying asset yamls..."
+    COMMAND
+      ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+      -DDESTINATION_DIR=$<TARGET_FILE_DIR:${PROJECT_NAME}>
+      -P ${CMAKE_SOURCE_DIR}/cmake/StageRuntimeFiles.cmake
+    VERBATIM)
+endif()
 
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch" AND
+   NOT SPAGHETTIKART_IOS)
   include(ExternalProject)
   # Torch's pinned spdlog bundles an fmt that trips a consteval error under
   # newer AppleClang (Xcode 16+): "call to consteval function

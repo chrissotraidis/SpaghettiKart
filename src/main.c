@@ -41,6 +41,10 @@
 #include "port/Engine.h"
 #include "engine/Matrix.h"
 
+#ifdef __IOS__
+#include "SpaghettiPadTouchControls.h"
+#endif
+
 // Declarations (not in this file)
 void func_80091B78(void);
 
@@ -358,16 +362,28 @@ void update_controller(s32 index) {
 
     controller->rawStickX = gControllerPads[index].stick_x;
     controller->rawStickY = gControllerPads[index].stick_y;
+#ifdef __IOS__
+    if (index == 0) {
+        SpaghettiPad_RecordRawStick(controller->rawStickX, controller->rawStickY);
+    }
+#endif
 
     controller->rightRawStickX = gControllerPads[index].right_stick_x;
     controller->rightRawStickY = gControllerPads[index].right_stick_y;
 
-    if ((gControllerPads[index].button & 4) != 0) {
+#ifndef __IOS__
+    if ((gControllerPads[index].button & D_CBUTTONS) != 0) {
         gControllerPads[index].button |= Z_TRIG;
     }
+#endif
     controller->buttonPressed = gControllerPads[index].button & (gControllerPads[index].button ^ controller->button);
     controller->buttonDepressed = controller->button & (gControllerPads[index].button ^ controller->button);
     controller->button = gControllerPads[index].button;
+#ifdef __IOS__
+    if (index == 0) {
+        SpaghettiPad_RecordControllerButtons(controller->button, controller->buttonPressed);
+    }
+#endif
 
     stick = 0;
     if (controller->rawStickX < -50) {

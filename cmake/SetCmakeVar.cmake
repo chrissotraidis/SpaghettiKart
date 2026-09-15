@@ -3,7 +3,10 @@ if(APPLE)
 endif()
 
 # Set the minimum version of CMake and the deployment target for macOS
-set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum OS X deployment version")
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING
+      "Minimum OS X deployment version")
+endif()
 
 
 # Set the C++ standard and enable the MSVC parallel build option

@@ -3,6 +3,7 @@
 #include "ship/resource/archive/FolderArchive.h"
 #include "ship/resource/archive/O2rArchive.h"
 #include "port/Engine.h"
+#include "libultraship/bridge/consolevariablebridge.h"
 #include "semver.hpp"
 #include "utils/StringHelper.h"
 #include <cstdlib>
@@ -21,6 +22,71 @@ void SortModsByDependencies();
 
 std::vector<std::tuple<ModMetadata, std::shared_ptr<Ship::Archive>>> Mods = {};
 
+static bool sImportedO2RDetected = false;
+static bool sImportedO2RLoaded = false;
+static bool sImportedO2REnabled = false;
+static std::string sImportedO2RDisplayName;
+static std::filesystem::path sImportedO2RPath;
+
+static bool IsUsableGameArchive(const std::string& path) {
+    int errorCode = 0;
+    zip_t* archive = zip_open(path.c_str(), ZIP_RDONLY | ZIP_CHECKCONS, &errorCode);
+    if (archive == nullptr) {
+        return false;
+    }
+
+    const bool hasManifest = zip_name_locate(archive, "mods.toml", 0) >= 0;
+    zip_close(archive);
+    return hasManifest;
+}
+
+static std::optional<std::filesystem::path> FindImportedO2RMod() {
+    const std::filesystem::path modsPath =
+        Ship::Context::GetPathRelativeToAppDirectory("mods");
+    std::error_code error;
+    if (!std::filesystem::is_directory(modsPath, error)) {
+        return std::nullopt;
+    }
+
+    for (std::filesystem::directory_iterator iterator(modsPath, error), end;
+         !error && iterator != end; iterator.increment(error)) {
+        if (iterator->is_regular_file(error) &&
+            StringHelper::IEquals(iterator->path().extension().string(), ".o2r") &&
+            IsUsableGameArchive(iterator->path().string())) {
+            return iterator->path();
+        }
+    }
+    return std::nullopt;
+}
+
+void RefreshImportedO2RModStatus() {
+    sImportedO2RDetected = false;
+    sImportedO2RLoaded = false;
+    sImportedO2RDisplayName.clear();
+    sImportedO2RPath.clear();
+
+    const auto importedPath = FindImportedO2RMod();
+    if (!importedPath.has_value()) {
+        return;
+    }
+
+    sImportedO2RDetected = true;
+    sImportedO2RDisplayName = importedPath->filename().string();
+    const auto normalizedPath = importedPath->lexically_normal();
+    sImportedO2RPath = normalizedPath;
+    for (const auto& [metadata, archive] : Mods) {
+        if (archive == nullptr ||
+            std::filesystem::path(archive->GetPath()).lexically_normal() != normalizedPath) {
+            continue;
+        }
+        sImportedO2RLoaded = archive->IsLoaded();
+        if (!metadata.name.empty()) {
+            sImportedO2RDisplayName = metadata.name;
+        }
+        break;
+    }
+}
+
 void InitModsSystem() {
     CheckMK64O2RExists();
 
@@ -33,11 +99,18 @@ void InitModsSystem() {
     DetectOutdatedDependencies();
 
     SortModsByDependencies();
+    RefreshImportedO2RModStatus();
 
+    const bool enableImportedTexturePack =
+        CVarGetInteger("gSettings.SpaghettiPad.ImportedTexturePack", 1);
     std::vector<std::shared_ptr<Ship::Archive>> loadedArchives;
     loadedArchives.reserve(Mods.size());
     for (const auto& [_, archive] : Mods) {
         if (archive == nullptr) {
+            continue;
+        }
+        if (!enableImportedTexturePack && !sImportedO2RPath.empty() &&
+            std::filesystem::path(archive->GetPath()).lexically_normal() == sImportedO2RPath) {
             continue;
         }
         loadedArchives.push_back(archive);
@@ -46,10 +119,14 @@ void InitModsSystem() {
     auto resourceManager = context->GetResourceManager();
     auto archiveManager = resourceManager->GetArchiveManager();
     archiveManager->SetArchives(std::make_shared<std::vector<std::shared_ptr<Ship::Archive>>>(loadedArchives));
+    sImportedO2REnabled =
+        sImportedO2RDetected && sImportedO2RLoaded && enableImportedTexturePack;
 }
 
 void UnloadMods() {
     Mods.clear();
+    sImportedO2REnabled = false;
+    RefreshImportedO2RModStatus();
 }
 
 // These bail-outs all run during InitModsSystem(), i.e. before the game world is set up.
@@ -58,6 +135,19 @@ void UnloadMods() {
 // at this point, which segfaults — a crash report on what should be a clean quit (e.g. when
 // the user declines the first-run "Generate one now?" prompt).
 void GenerateAssetsMods() {
+#ifdef __IOS__
+    while (!IsUsableGameArchive(Ship::Context::GetPathRelativeToAppDirectory(game_asset_file))) {
+        GameEngine::ShowRescanBox(
+            "Add your game",
+            "SpaghettiPad needs your legally acquired Mario Kart 64 (US 1.0) ROM in big-endian .z64 format.\n\n"
+            "Copy it into Files > On My iPad > SpaghettiPad, return here, then tap Rescan.");
+
+        if (GameEngine::GenAssetFile() &&
+            IsUsableGameArchive(Ship::Context::GetPathRelativeToAppDirectory(game_asset_file))) {
+            return;
+        }
+    }
+#else
     if (GameEngine::ShowYesNoBox("No O2R Files", "No O2R files found. Generate one now?") == IDYES) {
         if (!GameEngine::GenAssetFile()) {
             GameEngine::ShowMessage("Error", "An error occured, no O2R file was generated.\n\nExiting...");
@@ -66,6 +156,7 @@ void GenerateAssetsMods() {
     } else {
         _Exit(1);
     }
+#endif
 }
 
 std::vector<std::string> ListMods() {
@@ -73,7 +164,7 @@ std::vector<std::string> ListMods() {
     const std::string assets_path = Ship::Context::LocateFileAcrossAppDirs(engine_asset_file);
 
     std::vector<std::string> archiveFiles;
-    if (std::filesystem::exists(main_path)) {
+    if (IsUsableGameArchive(main_path)) {
         archiveFiles.push_back(main_path);
     } else { // should not happen, but just in case
         GenerateAssetsMods();
@@ -102,6 +193,35 @@ std::vector<std::string> ListMods() {
     }
 
     return archiveFiles;
+}
+
+bool HasImportedO2RMod() {
+    return sImportedO2RDetected;
+}
+
+bool IsImportedO2RModLoaded() {
+    return sImportedO2RLoaded;
+}
+
+bool IsImportedO2RModEnabled() {
+    return sImportedO2REnabled;
+}
+
+std::string GetImportedO2RModStatusText(bool requestedEnabled) {
+    if (!sImportedO2RDetected) {
+        return "Status: Original graphics (no optional pack installed)";
+    }
+    if (!sImportedO2RLoaded) {
+        return "Status: Detected - relaunch required\n" + sImportedO2RDisplayName;
+    }
+    if (requestedEnabled != sImportedO2REnabled) {
+        return "Status: Restart required - will turn " +
+            std::string(requestedEnabled ? "on\n" : "off\n") +
+            sImportedO2RDisplayName;
+    }
+    return "Status: Loaded - currently " +
+        std::string(sImportedO2REnabled ? "on\n" : "off\n") +
+        sImportedO2RDisplayName;
 }
 
 std::optional<std::vector<std::string>> CheckCyclicDependencies() {
@@ -211,7 +331,7 @@ void AddCoreDependencies() {
 void CheckMK64O2RExists() {
     const std::string main_path = Ship::Context::GetPathRelativeToAppDirectory(game_asset_file);
 
-    if (!std::filesystem::exists(main_path)) {
+    if (!IsUsableGameArchive(main_path)) {
         GenerateAssetsMods();
     }
 }

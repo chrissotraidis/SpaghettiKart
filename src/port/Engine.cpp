@@ -38,6 +38,10 @@
 
 #include <utility>
 
+#ifdef __IOS__
+#include "SpaghettiPadTouchControls.h"
+#endif
+
 #ifdef __SWITCH__
 #include <ship/port/switch/SwitchImpl.h>
 #endif
@@ -266,26 +270,60 @@ GameEngine::GameEngine() {
 }
 
 bool GameEngine::GenAssetFile() {
-    auto extractor = new GameExtractor();
+    auto extractor = std::make_unique<GameExtractor>();
 
     if (!extractor->SelectGameFromUI()) {
+#ifdef __IOS__
+        ShowMessage("ROM not found",
+                    "No supported ROM was found.\n\nSpaghettiPad requires Mario Kart 64 (US 1.0) in big-endian "
+                    ".z64 format. Wrong-region and byteswapped .n64/.v64 files are not supported.");
+        return false;
+#else
         ShowMessage("Error", "No ROM selected.\n\nExiting...");
         // _Exit, not exit: this runs before the game world is initialized, so running the
         // global World destructor (CleanWorld) would dereference still-null singletons and crash.
         _Exit(1);
+#endif
     }
 
     auto game = extractor->ValidateChecksum();
     if (!game.has_value()) {
+#ifdef __IOS__
+        ShowMessage("Unsupported ROM",
+                    "SpaghettiPad requires Mario Kart 64 (US 1.0) in big-endian .z64 format. Wrong-region and "
+                    "byteswapped .n64/.v64 files are not supported.");
+        return false;
+#else
         ShowMessage("Unsupported ROM",
                     "The provided ROM is not supported.\n\nCheck the readme for a list of supported versions.");
         _Exit(1);
+#endif
     }
 
     ShowMessage(("Found " + game.value()).c_str(),
                 "The extraction process will now begin.\n\nThis may take a few minutes.", SDL_MESSAGEBOX_INFORMATION);
 
-    return extractor->GenerateOTR();
+    const auto appDirectory = std::filesystem::path(Ship::Context::GetAppDirectoryPath());
+    const auto hashCache = appDirectory / "torch.hash.yml";
+    const auto gameArchive = appDirectory / game_asset_file;
+    std::error_code error;
+    std::filesystem::remove(hashCache, error);
+    error.clear();
+    std::filesystem::remove(gameArchive, error);
+
+    const bool generated = extractor->GenerateOTR();
+    if (!generated) {
+        error.clear();
+        std::filesystem::remove(hashCache, error);
+        error.clear();
+        std::filesystem::remove(gameArchive, error);
+#ifdef __IOS__
+        ShowMessage("Extraction failed",
+                    "SpaghettiPad could not finish extracting the game archive. Check the ROM, keep the app open, "
+                    "then tap Rescan to try again.");
+#endif
+    }
+    return generated;
 }
 
 uint32_t GameEngine::GetInterpolationFPS() {
@@ -315,6 +353,22 @@ void GameEngine::ShowMessage(const char* title, const char* message, SDL_Message
 #else
     SDL_ShowSimpleMessageBox(type, title, message, nullptr);
     SPDLOG_ERROR(message);
+#endif
+}
+
+void GameEngine::ShowRescanBox(const char* title, const char* box) {
+#if defined(__SWITCH__)
+    SPDLOG_ERROR(box);
+#else
+    int ret = IDYES;
+    SDL_MessageBoxButtonData button = { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, IDYES, "Rescan" };
+    SDL_MessageBoxData boxData = { 0 };
+    boxData.numbuttons = 1;
+    boxData.flags = SDL_MESSAGEBOX_INFORMATION;
+    boxData.message = box;
+    boxData.title = title;
+    boxData.buttons = &button;
+    SDL_ShowMessageBox(&boxData, &ret);
 #endif
 }
 
@@ -350,9 +404,30 @@ void GameEngine::Create() {
     InitModsSystem();
     instance->gHMAS = new HMAS();
     instance->AudioInit();
+#ifdef __IOS__
+    CVarRegisterFloat(
+        "gSettings.Menu.Scale", SpaghettiPad_RecommendedMenuScale());
+#endif
     GameUI::SetupGuiElements();
 #if defined(__SWITCH__) || defined(__WIIU__)
     CVarRegisterInteger("gControlNav", 1); // always enable controller nav on switch/wii u
+#elif defined(__IOS__)
+    CVarSetInteger(CVAR_IMGUI_CONTROLLER_NAV, 1);
+    CVarRegisterInteger("gSettings.SpaghettiPad.TouchControls", 1);
+    CVarRegisterInteger(
+        "gSettings.SpaghettiPad.LegacyTouchControls", 0);
+    CVarRegisterInteger("gSettings.SpaghettiPad.TiltSteering", 0);
+    CVarRegisterFloat("gSettings.SpaghettiPad.TiltSensitivity", 1.0f);
+    SpaghettiPad_InitializeTouchControls();
+    SpaghettiPad_SetTouchControlsEnabled(
+        CVarGetInteger("gSettings.SpaghettiPad.TouchControls", 1));
+    SpaghettiPad_SetLegacyTouchControlsEnabled(
+        CVarGetInteger(
+            "gSettings.SpaghettiPad.LegacyTouchControls", 0));
+    SpaghettiPad_SetTiltSensitivity(
+        CVarGetFloat("gSettings.SpaghettiPad.TiltSensitivity", 1.0f));
+    SpaghettiPad_SetTiltSteeringEnabled(
+        CVarGetInteger("gSettings.SpaghettiPad.TiltSteering", 0));
 #endif
 }
 

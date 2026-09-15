@@ -1,5 +1,11 @@
 #include "PortMenu.h"
+
+#ifdef __IOS__
+#include "SpaghettiPadTouchControls.h"
+#endif
 #include "UIWidgets.h"
+#include "engine/mods/ModManager.h"
+#include "port/Engine.h"
 #include "port/Game.h"
 #include "ship/window/gui/GuiMenuBar.h"
 #include "ship/window/gui/GuiElement.h"
@@ -96,8 +102,8 @@ void PortMenu::AddSettings() {
     AddSidebarEntry("Settings", "General", 3);
     WidgetPath path = { "Settings", "General", SECTION_COLUMN_1 };
 
+#if !defined(__SWITCH__) && !defined(__IOS__)
     static bool isFullscreen = false;
-#ifndef __SWITCH__
     AddWidget(path, "Toggle Fullscreen", WIDGET_CHECKBOX)
         .ValuePointer(&isFullscreen)
         .PreFunc([](WidgetInfo& info) { isFullscreen = Ship::Context::GetInstance()->GetWindow()->IsFullscreen(); })
@@ -129,7 +135,11 @@ void PortMenu::AddSettings() {
         .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger("gSettings.Menu.Extent", 0); })
         .Options(FloatSliderOptions()
                      .Tooltip("Adjust the scale for the menu.")
+#ifdef __IOS__
+                     .Min(0.75f)
+#else
                      .Min(1.0f)
+#endif
                      .Max(2.0f)
                      .DefaultValue(1.0f)
                      .Format("%.1f")
@@ -145,6 +155,7 @@ void PortMenu::AddSettings() {
             "Allows controller navigation of the Spaghetti menu (Settings, Enhancements,...)\nCAUTION: "
             "This will disable game inputs while the menu is visible.\n\nD-pad to move between "
             "items, A to select, B to move up in scope."));
+#ifndef __IOS__
     AddWidget(path, "Cursor Always Visible", WIDGET_CVAR_CHECKBOX)
         .CVar("gSettings.CursorVisibility")
         .Callback([](WidgetInfo& info) {
@@ -152,6 +163,7 @@ void PortMenu::AddSettings() {
                 CVarGetInteger("gSettings.CursorVisibility", 0));
         })
         .Options(CheckboxOptions().Tooltip("Makes the cursor always visible, even in full screen."));
+#endif
 #endif
     AddWidget(path, "Search In Sidebar", WIDGET_CVAR_CHECKBOX)
         .CVar("gSettings.Menu.SidebarSearch")
@@ -168,6 +180,7 @@ void PortMenu::AddSettings() {
         .CVar("gSettings.Menu.SearchAutofocus")
         .Options(CheckboxOptions().Tooltip(
             "Search input box gets autofocus when visible. Does not affect using other widgets."));
+#ifndef __IOS__
     AddWidget(path, "Alt Assets Tab hotkey", WIDGET_CVAR_CHECKBOX)
         .CVar("gEnhancements.Mods.AlternateAssetsHotkey")
         .Options(
@@ -179,6 +192,7 @@ void PortMenu::AddSettings() {
             SDL_OpenURL(std::string("file:///" + std::filesystem::absolute(filesPath).string()).c_str());
         })
         .Options(ButtonOptions().Tooltip("Opens the folder that contains the save and mods folders, etc."));
+#endif
 #endif
 
     // Audio Settings
@@ -229,7 +243,9 @@ void PortMenu::AddSettings() {
     }
     path.sidebarName = "Graphics";
     AddSidebarEntry("Settings", "Graphics", 3);
+#ifndef __IOS__
     AddWidget(path, "Renderer API (Needs reload)", WIDGET_VIDEO_BACKEND);
+#endif
 
     AddWidget(path, "Internal Resolution: %.0f%%", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_INTERNAL_RESOLUTION)
@@ -248,8 +264,8 @@ void PortMenu::AddSettings() {
         })
         .Options(
             FloatSliderOptions()
-                .Tooltip("Multiplies your output resolution by the value inputted, as a more intensive but effective "
-                         "form of anti-aliasing.")
+                .Tooltip("Changes the game's internal rendering resolution immediately. Higher values can look "
+                         "sharper, but use more GPU power.")
                 .ShowButtons(false)
                 .IsPercentage()
                 .Format("")
@@ -287,6 +303,27 @@ void PortMenu::AddSettings() {
                 info.activeDisables.push_back(DISABLE_FOR_MATCH_REFRESH_RATE_ON);
         })
         .Options(IntSliderOptions().Tooltip(tooltip).Min(30).Max(maxFps).DefaultValue(30));
+#ifdef __IOS__
+    AddWidget(path, "30 FPS", WIDGET_BUTTON)
+        .Callback([](WidgetInfo& info) {
+            CVarSetInteger("gInterpolationFPS", 30);
+            Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        })
+        .Options(ButtonOptions().Tooltip("Original frame pacing with interpolated rendering."));
+    AddWidget(path, "60 FPS", WIDGET_BUTTON)
+        .Callback([](WidgetInfo& info) {
+            CVarSetInteger("gInterpolationFPS", 60);
+            Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        })
+        .Options(ButtonOptions().Tooltip("Recommended smooth setting for iPhone and iPad."));
+    AddWidget(path, "120 FPS (ProMotion)", WIDGET_BUTTON)
+        .Callback([](WidgetInfo& info) {
+            CVarSetInteger("gInterpolationFPS", 120);
+            Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        })
+        .Options(ButtonOptions().Tooltip("For ProMotion iPads; verify performance with imported texture packs."));
+#endif
+#ifndef __IOS__
     AddWidget(path, "Match Refresh Rate", WIDGET_BUTTON)
         .Callback([](WidgetInfo& info) {
             int hz = Ship::Context::GetInstance()->GetWindow()->GetCurrentRefreshRate();
@@ -312,10 +349,12 @@ void PortMenu::AddSettings() {
                      .Min(0)
                      .Max(MAX_FPS)
                      .DefaultValue(80));
+#endif
     AddWidget(path, "Enable Vsync", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_VSYNC_ENABLED)
         .PreFunc([](WidgetInfo& info) { info.isHidden = mPortMenu->disabledMap.at(DISABLE_FOR_NO_VSYNC).active; })
         .Options(CheckboxOptions().Tooltip("Enables Vsync."));
+#ifndef __IOS__
     AddWidget(path, "Windowed Fullscreen", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_SDL_WINDOWED_FULLSCREEN)
         .PreFunc([](WidgetInfo& info) {
@@ -329,12 +368,78 @@ void PortMenu::AddSettings() {
         .Options(CheckboxOptions()
                      .Tooltip("Allows multiple ImGui windows to be opened at once (Does not effect the game or the splitscreen modes). Requires a reload to take effect.")
                      .DefaultValue(true));
+#endif
     AddWidget(path, "Texture Filter (Needs reload)", WIDGET_CVAR_COMBOBOX)
         .CVar(CVAR_TEXTURE_FILTER)
         .Options(ComboboxOptions().Tooltip("Sets the applied Texture Filtering.").ComboMap(textureFilteringMap));
 
     path.sidebarName = "Controls";
     AddSidebarEntry("Settings", "Controls", 1);
+#ifdef __IOS__
+    AddWidget(path, "Touch Controls", WIDGET_CVAR_CHECKBOX)
+        .CVar("gSettings.SpaghettiPad.TouchControls")
+        .Callback([](WidgetInfo& info) {
+            SpaghettiPad_SetTouchControlsEnabled(
+                CVarGetInteger("gSettings.SpaghettiPad.TouchControls", 1));
+        })
+        .Options(CheckboxOptions()
+                     .DefaultValue(true)
+                     .Tooltip("Shows the low-grip touch controller. The menu button remains available when disabled."));
+    AddWidget(path, "Legacy Touch Controls", WIDGET_CVAR_CHECKBOX)
+        .CVar("gSettings.SpaghettiPad.LegacyTouchControls")
+        .Callback([](WidgetInfo& info) {
+            SpaghettiPad_SetLegacyTouchControlsEnabled(
+                CVarGetInteger(
+                    "gSettings.SpaghettiPad.LegacyTouchControls", 0));
+        })
+        .Options(CheckboxOptions()
+                     .DefaultValue(false)
+                     .Tooltip("Restores the original fixed touch layout. Custom positioning, "
+                              "resizing, hiding, and A-button hold assist are unavailable."));
+    AddWidget(path, "Customize Touch Layout", WIDGET_BUTTON)
+        .PreFunc([](WidgetInfo& info) {
+            bool available =
+                CVarGetInteger("gSettings.SpaghettiPad.TouchControls", 1) &&
+                !CVarGetInteger(
+                    "gSettings.SpaghettiPad.LegacyTouchControls", 0);
+            info.options->disabled = !available;
+            info.options->disabledTooltip =
+                "Enable Touch Controls and turn off Legacy Touch Controls first.";
+        })
+        .Callback([](WidgetInfo& info) {
+            SpaghettiPad_BeginTouchLayoutEditing();
+        })
+        .Options(ButtonOptions().Tooltip(
+            "Closes Settings and opens the native layout editor. Drag controls, "
+            "resize the selected control, hide unused buttons, or reset the layout."));
+    AddWidget(path, "Tilt Steering", WIDGET_CVAR_CHECKBOX)
+        .CVar("gSettings.SpaghettiPad.TiltSteering")
+        .Callback([](WidgetInfo& info) {
+            SpaghettiPad_SetTiltSteeringEnabled(
+                CVarGetInteger("gSettings.SpaghettiPad.TiltSteering", 0));
+        })
+        .Options(CheckboxOptions()
+                     .DefaultValue(false)
+                     .Tooltip("Steers by tilting the device. The touch stick takes priority while held."));
+    AddWidget(path, "Tilt Sensitivity: %.1fx", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar("gSettings.SpaghettiPad.TiltSensitivity")
+        .Callback([](WidgetInfo& info) {
+            SpaghettiPad_SetTiltSensitivity(
+                CVarGetFloat("gSettings.SpaghettiPad.TiltSensitivity", 1.0f));
+        })
+        .Options(FloatSliderOptions()
+                     .Min(0.5f)
+                     .Max(2.0f)
+                     .Step(0.1f)
+                     .DefaultValue(1.0f)
+                     .Format("%.1fx")
+                     .Tooltip("Adjusts how far steering moves for the same device tilt."));
+    AddWidget(path, "Recenter Tilt Steering", WIDGET_BUTTON)
+        .Callback([](WidgetInfo& info) {
+            SpaghettiPad_RecenterTiltSteering();
+        })
+        .Options(ButtonOptions().Tooltip("Uses the current device angle as straight ahead."));
+#endif
     AddWidget(path,
               "This interface can be a little daunting. Please bear with us as we work to improve the experience "
               "and address some known issues.\n"
@@ -359,6 +464,111 @@ int32_t motionBlurStrength;
 
 void PortMenu::AddEnhancements() {
     AddMenuEntry("Enhancements", "gSettings.Menu.EnhancementsSidebarSection");
+#ifdef __IOS__
+    WidgetPath texturePath = { "Enhancements", "Texture Packs", SECTION_COLUMN_1 };
+    AddSidebarEntry("Enhancements", "Texture Packs", 1);
+    AddWidget(texturePath,
+              "Optional visual upgrade. Enhanced or HD texture packs replace the original artwork; they are not "
+              "required to play.",
+              WIDGET_TEXT);
+    AddWidget(texturePath, "Use Enhanced / HD Texture Pack", WIDGET_CVAR_CHECKBOX)
+        .CVar("gSettings.SpaghettiPad.ImportedTexturePack")
+        .PreFunc([](WidgetInfo& info) {
+            const bool loaded = IsImportedO2RModLoaded();
+            info.options->disabled = !loaded;
+            info.options->disabledTooltip =
+                loaded ? "" : "Import an optional enhanced/HD .o2r pack and relaunch SpaghettiPad first.";
+        })
+        .Callback([](WidgetInfo& info) {
+            const bool requestedEnabled =
+                CVarGetInteger("gSettings.SpaghettiPad.ImportedTexturePack", 1);
+            const bool currentEnabled = IsImportedO2RModEnabled();
+            if (requestedEnabled == currentEnabled) {
+                return;
+            }
+
+            if (GameEngine::ShowYesNoBox(
+                    "Relaunch required",
+                    "Changing the texture pack requires relaunching SpaghettiPad. "
+                    "Close the app now and apply this change?\n\n"
+                    "Reopen SpaghettiPad manually from the Home Screen. "
+                    "Current race progress will be lost. Saved game data is preserved.") == IDYES) {
+                CVarSetInteger("gOpenMenu", 0);
+                CVarSave();
+                Ship::Context::GetInstance()->GetWindow()->Close();
+                return;
+            }
+
+            CVarSetInteger("gSettings.SpaghettiPad.ImportedTexturePack", currentEnabled);
+            Ship::Context::GetInstance()
+                ->GetWindow()
+                ->GetGui()
+                ->SaveConsoleVariablesNextFrame();
+        })
+        .Options(CheckboxOptions()
+                     .DefaultValue(true)
+                     .Tooltip("Switches between the original graphics and the optional enhanced/HD pack after a "
+                              "restart."));
+    AddWidget(texturePath, "Status: Checking...", WIDGET_TEXT)
+        .PreFunc([](WidgetInfo& info) {
+            info.name = GetImportedO2RModStatusText(
+                CVarGetInteger("gSettings.SpaghettiPad.ImportedTexturePack", 1));
+        });
+    AddWidget(texturePath, "Check Again", WIDGET_BUTTON)
+        .Callback([](WidgetInfo& info) {
+            RefreshImportedO2RModStatus();
+            if (!HasImportedO2RMod()) {
+                GameEngine::ShowMessage(
+                    "No texture pack found",
+                    "No optional texture pack is installed. SpaghettiPad will continue using the original graphics.\n\n"
+                    "To add one, copy an official SpaghettiKart .o2r into Files > On My iPad or "
+                    "iPhone > SpaghettiPad > mods, then return here.",
+                    SDL_MESSAGEBOX_INFORMATION);
+                return;
+            }
+            if (!IsImportedO2RModLoaded()) {
+                GameEngine::ShowMessage(
+                    "Texture pack detected",
+                    "The archive is valid. Relaunch SpaghettiPad once to load it.",
+                    SDL_MESSAGEBOX_INFORMATION);
+                return;
+            }
+            if (!CVarGetInteger("gSettings.SpaghettiPad.ImportedTexturePack", 1) &&
+                GameEngine::ShowYesNoBox(
+                    "Texture pack loaded",
+                    "Enable the enhanced/HD texture pack and close SpaghettiPad now?\n\n"
+                    "Reopen SpaghettiPad manually from the Home Screen.") == IDYES) {
+                CVarSetInteger("gSettings.SpaghettiPad.ImportedTexturePack", 1);
+                CVarSetInteger("gOpenMenu", 0);
+                CVarSave();
+                Ship::Context::GetInstance()->GetWindow()->Close();
+                return;
+            }
+            GameEngine::ShowMessage(
+                "Texture pack loaded",
+                "Use the switch above to change between original and imported textures. "
+                "SpaghettiPad will ask before closing to apply the change.",
+                SDL_MESSAGEBOX_INFORMATION);
+        })
+        .Options(ButtonOptions().Tooltip("Rechecks the Files-visible mods folder."));
+    AddWidget(texturePath, "Installation Instructions", WIDGET_BUTTON)
+        .Callback([](WidgetInfo& info) {
+            GameEngine::ShowMessage(
+                "Install an optional HD texture pack",
+                "This visual upgrade is optional and separate from the Mario Kart 64 game archive.\n\n"
+                "1. Download the SpaghettiKart HD .o2r from the official MK64 Reloaded page.\n"
+                "2. In Files, move it to On My iPad or iPhone > SpaghettiPad > mods.\n"
+                "3. Relaunch SpaghettiPad once, then use the switch above.\n\n"
+                "Use HD first. Try 4K only on an M-series iPad.",
+                SDL_MESSAGEBOX_INFORMATION);
+        })
+        .Options(ButtonOptions().Tooltip("Shows the Files path and device guidance."));
+    AddWidget(texturePath, "Open Official MK64 Reloaded Page", WIDGET_BUTTON)
+        .Callback([](WidgetInfo& info) {
+            SDL_OpenURL("https://evilgames.eu/texture-packs/mk64-reloaded.htm");
+        })
+        .Options(ButtonOptions().Tooltip("Opens the pack author's official page in Safari."));
+#endif
     WidgetPath path = { "Enhancements", "General", SECTION_COLUMN_1 };
     AddSidebarEntry("Enhancements", "General", 3);
     AddWidget(path, "No multiplayer feature cuts", WIDGET_CVAR_CHECKBOX)

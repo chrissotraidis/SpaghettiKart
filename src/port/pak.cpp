@@ -1,12 +1,5 @@
 #include <filesystem>
 #include <fstream>
-#if __has_include(<fmt/format.h>)
-#include <fmt/format.h>
-#define fmt(...) fmt::format(__VA_ARGS__)
-#else
-#include <format>
-#define fmt(...) std::format(__VA_ARGS__)
-#endif
 
 #include <libultraship.h>
 #include <libultraship/libultra.h>
@@ -23,7 +16,7 @@ typedef struct ControllerPak {
 } ControllerPak;
 
 std::string Pfs_PakFile_GetPath(u8 file_no) {
-    return Ship::Context::GetPathRelativeToAppDirectory(fmt("controllerPak_file_{}.sav", file_no));
+    return Ship::Context::GetPathRelativeToAppDirectory("controllerPak_file_" + std::to_string(file_no) + ".sav");
 }
 
 std::string Pfs_PakHeader_GetPath() {

@@ -4,6 +4,10 @@
 #include "Game.h"
 #include "port/Engine.h"
 
+#ifdef __IOS__
+#include "SpaghettiPadTouchControls.h"
+#endif
+
 #include <fast/Fast3dWindow.h>
 #include <memory>
 #include <atomic>
@@ -979,6 +983,9 @@ static void ApplyPendingReset() {
 
 void push_frame() {
     ApplyPendingReset();
+#ifdef __IOS__
+    SpaghettiPad_SetGameplayActive(gGamestate == RACING);
+#endif
     GameEngine::StartAudioFrame();
     GameEngine::Instance->StartFrame();
     thread5_iteration();
@@ -1065,6 +1072,11 @@ extern "C"
     thread5_game_loop();
     gEditor.Load();
     while (WindowIsRunning()) {
+#ifdef __IOS__
+        if (!WindowIsFrameReady()) {
+            continue;
+        }
+#endif
         push_frame();
     }
     CustomEngineDestroy();

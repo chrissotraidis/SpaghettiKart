@@ -1,18 +1,38 @@
 # =================== SSE2NEON ===================
 set(SSE2NEON_DIR ${CMAKE_BINARY_DIR}/_deps/sse2neon)
-file(
-  DOWNLOAD
-  "https://raw.githubusercontent.com/DLTcollab/sse2neon/refs/heads/master/sse2neon.h"
-  "${SSE2NEON_DIR}/sse2neon.h")
+set(SSE2NEON_PATH "${SSE2NEON_DIR}/sse2neon.h")
+set(SSE2NEON_SHA256
+    fab5e1be095ce8db9d2ab0c1fe0b2c6f2a34657b43ce83688e8c84224806df38)
+if(EXISTS "${SSE2NEON_PATH}")
+  file(SHA256 "${SSE2NEON_PATH}" SSE2NEON_EXISTING_SHA256)
+endif()
+if(NOT SSE2NEON_EXISTING_SHA256 STREQUAL SSE2NEON_SHA256)
+  file(
+    DOWNLOAD
+    "https://raw.githubusercontent.com/DLTcollab/sse2neon/3b70b3727edc9a151c113814129258c3423a771c/sse2neon.h"
+    "${SSE2NEON_PATH}"
+    EXPECTED_HASH SHA256=${SSE2NEON_SHA256}
+    TLS_VERIFY ON)
+endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${SSE2NEON_DIR})
 
 # ================== SEMVER ===================
 set(SEMVER_DIR ${CMAKE_BINARY_DIR}/_deps/semver)
-file(
-  DOWNLOAD
-  "https://raw.githubusercontent.com/Neargye/semver/refs/tags/v1.0.0-rc/include/semver.hpp"
-  "${SEMVER_DIR}/semver.hpp")
+set(SEMVER_PATH "${SEMVER_DIR}/semver.hpp")
+set(SEMVER_SHA256
+    af2c0c53124dc7f52c58a7205e458ad3efbac2f61ce55addf9c8f94338a04182)
+if(EXISTS "${SEMVER_PATH}")
+  file(SHA256 "${SEMVER_PATH}" SEMVER_EXISTING_SHA256)
+endif()
+if(NOT SEMVER_EXISTING_SHA256 STREQUAL SEMVER_SHA256)
+  file(
+    DOWNLOAD
+    "https://raw.githubusercontent.com/Neargye/semver/ccbbfdf2f862a48498d37d5955743a5082ee49bf/include/semver.hpp"
+    "${SEMVER_PATH}"
+    EXPECTED_HASH SHA256=${SEMVER_SHA256}
+    TLS_VERIFY ON)
+endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${SEMVER_DIR})
 

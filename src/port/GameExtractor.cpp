@@ -5,6 +5,8 @@
 #pragma comment(lib, "Shlwapi.lib")
 #endif
 #include "GameExtractor.h"
+#include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <unordered_map>
 
@@ -86,6 +88,11 @@ bool GameExtractor::SelectGameFromUI() {
 
         romPath = selection[0];
     }
+#elif defined(__IOS__)
+    if (!foundGame) {
+        SPDLOG_ERROR("No supported .z64 ROM found in the iOS Documents directory");
+        return false;
+    }
 #else
     // Mobile: fallback to baserom.us.z64
     if (!foundGame && !std::filesystem::exists(Ship::Context::GetPathRelativeToAppDirectory("baserom.us.z64"))) {
@@ -119,7 +126,25 @@ bool GameExtractor::SelectGameFromUI() {
 }
 
 void GameExtractor::GetRoms(std::vector<std::string>& roms) {
-#ifdef _WIN32
+#ifdef __IOS__
+    const auto documentsPath = std::filesystem::path(Ship::Context::GetAppDirectoryPath());
+    std::error_code error;
+    for (const auto& file : std::filesystem::directory_iterator(documentsPath, error)) {
+        if (!file.is_regular_file(error)) {
+            continue;
+        }
+
+        auto extension = file.path().extension().string();
+        std::transform(extension.begin(), extension.end(), extension.begin(),
+                       [](unsigned char character) { return std::tolower(character); });
+        if (extension == ".z64") {
+            roms.push_back(file.path().string());
+        }
+    }
+    if (error) {
+        SPDLOG_ERROR("Failed to scan iOS Documents directory {}: {}", documentsPath.string(), error.message());
+    }
+#elif defined(_WIN32)
     WIN32_FIND_DATAA ffd;
     HANDLE h = FindFirstFileA(".\\*", &ffd);
 

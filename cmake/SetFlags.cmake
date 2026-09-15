@@ -37,9 +37,11 @@ else()
     -Wno-parentheses
     -Wno-missing-braces
     -ffast-math
-    -flto=auto
     -pipe)
-  target_link_options(${PROJECT_NAME} PRIVATE -flto=auto)
+  if(NOT SPAGHETTIKART_IOS)
+    target_compile_options(${PROJECT_NAME} PRIVATE -flto=auto)
+    target_link_options(${PROJECT_NAME} PRIVATE -flto=auto)
+  endif()
 
   set(C_FLAGS -Werror-implicit-function-declaration
               -Wno-incompatible-pointer-types)

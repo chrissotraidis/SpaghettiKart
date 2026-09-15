@@ -77,6 +77,7 @@ class GameEngine {
     static void Destroy();
     static void ProcessGfxCommands(Gfx* pool);
     static uint8_t GetBankIdByName(const std::string& name);
+    static void ShowRescanBox(const char* title, const char* box);
     static int ShowYesNoBox(const char* title, const char* box);
     static void ShowMessage(const char* title, const char* message, SDL_MessageBoxFlags type = SDL_MESSAGEBOX_ERROR);
     float OTRGetAspectRatio(void);
@@ -126,4 +127,3 @@ int32_t GameEngine_ResourceGetTexTypeByName(const char* name);
 #ifdef __cplusplus
 }
 #endif
-
