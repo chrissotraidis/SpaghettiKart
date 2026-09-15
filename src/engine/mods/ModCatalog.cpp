@@ -106,7 +106,7 @@ void ScanImportedMods(bool startup) {
         core[meta.name] = meta;
     }
     for (auto& mod : catalog) {
-        for (const auto& [name, range] : metadata[mod.path].dependencies) {
+        for (auto& [name, range] : metadata[mod.path].dependencies) {
             auto found = core.find(name);
             if (found != core.end() && !range.first.contains(found->second.version))
                 mod.error = "Requires a different version of " + name + ".";
