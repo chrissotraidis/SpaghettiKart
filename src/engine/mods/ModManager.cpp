@@ -74,7 +74,8 @@ void GenerateAssetsMods() {
         GameEngine::ShowRescanBox(
             "Add your game",
             "SpaghettiPad needs your legally acquired Mario Kart 64 (US 1.0) ROM in big-endian .z64 format.\n\n"
-            "Copy it into Files > On My iPad > SpaghettiPad, return here, then tap Rescan.");
+            "In Files, open On My iPhone or On My iPad, then SpaghettiPad. Copy the ROM there, "
+            "return here, then tap Rescan.");
 
         if (GameEngine::GenAssetFile() &&
             IsUsableGameArchive(Ship::Context::GetPathRelativeToAppDirectory(game_asset_file))) {
