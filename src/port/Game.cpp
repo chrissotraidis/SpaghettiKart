@@ -1017,7 +1017,7 @@ void CM_ThrowRuntimeError(const char* fmt, ...) {
     exit(EXIT_FAILURE);
 }
 
-#ifdef __APPLE__
+#if defined(__APPLE__) && !defined(PLATFORM_IOS)
 #include <CoreFoundation/CoreFoundation.h>
 #endif
 
@@ -1034,7 +1034,7 @@ extern "C"
     // Allow non-ascii characters for Windows
     setlocale(LC_ALL, ".UTF8");
 #endif
-#if defined(__APPLE__)
+#if defined(__APPLE__) && !defined(PLATFORM_IOS)
     // Disable the macOS "press and hold" accent/diacritic popup for this app. SDL keeps a Cocoa text
     // input context active, so holding a movement key is interpreted as holding a letter key in a text
     // field, and macOS shows the accent picker instead of repeating it. Per-app equivalent of
