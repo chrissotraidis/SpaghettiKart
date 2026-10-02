@@ -124,6 +124,14 @@ if(SPAGHETTIKART_IOS)
   endif()
 endif()
 
+option(SPAGHETTIPAD_RUNTIME_ONLY "Build the experimental iOS module host without game sources" OFF)
+if(SPAGHETTIPAD_RUNTIME_ONLY)
+  if(NOT SPAGHETTIKART_IOS)
+    message(FATAL_ERROR "SPAGHETTIPAD_RUNTIME_ONLY requires an iOS target")
+  endif()
+  enable_language(OBJC OBJCXX)
+  set(ALL_FILES "${SPAGHETTIPAD_SHELL_DIR}/SpaghettiPadGameLoader.mm")
+endif()
 add_executable(${PROJECT_NAME} ${ALL_FILES})
 target_include_directories(
   ${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
@@ -364,3 +372,7 @@ endif()
 set(CPACK_PROJECT_CONFIG_FILE
     ${CMAKE_SOURCE_DIR}/cmake/configure-packaging.cmake)
 include(cmake/packaging.cmake)
+
+if(SPAGHETTIPAD_RUNTIME_ONLY)
+  include(cmake/SpaghettiPadRuntime.cmake)
+endif()
