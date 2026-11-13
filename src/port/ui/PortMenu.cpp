@@ -386,6 +386,30 @@ void PortMenu::AddSettings() {
         .Options(CheckboxOptions()
                      .DefaultValue(true)
                      .Tooltip("Shows the low-grip touch controller. The menu button remains available when disabled."));
+    AddWidget(path, "Auto-hide Touch Controls with Controller", WIDGET_CVAR_CHECKBOX)
+        .CVar("gSettings.SpaghettiPad.AutoHideTouchControls")
+        .Callback([](WidgetInfo& info) {
+            SpaghettiPad_SetTouchAutoHide(
+                CVarGetInteger("gSettings.SpaghettiPad.AutoHideTouchControls", 1));
+        })
+        .Options(CheckboxOptions()
+                     .DefaultValue(true)
+                     .Tooltip("Hides the touch controller while a controller is connected to Player 1. "
+                              "The menu button remains available."));
+    AddWidget(path, "Show Touch Controls", WIDGET_BUTTON)
+        .PreFunc([](WidgetInfo& info) {
+            info.options->disabled = !SpaghettiPad_GameplayTouchHidden();
+            info.options->disabledTooltip = "Touch controls are already shown.";
+        })
+        .Callback([](WidgetInfo& info) {
+            CVarSetInteger("gSettings.SpaghettiPad.TouchControls", 1);
+            CVarSetInteger("gSettings.SpaghettiPad.AutoHideTouchControls", 0);
+            Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+            SpaghettiPad_ShowTouchControls();
+        })
+        .Options(ButtonOptions().Tooltip(
+            "Closes Settings and brings back working touch controls, even with a controller "
+            "connected. Auto-hide stays off until you turn it back on."));
     AddWidget(path, "Legacy Touch Controls", WIDGET_CVAR_CHECKBOX)
         .CVar("gSettings.SpaghettiPad.LegacyTouchControls")
         .Callback([](WidgetInfo& info) {
