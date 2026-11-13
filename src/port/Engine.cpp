@@ -414,11 +414,14 @@ void GameEngine::Create() {
 #elif defined(__IOS__)
     CVarSetInteger(CVAR_IMGUI_CONTROLLER_NAV, 1);
     CVarRegisterInteger("gSettings.SpaghettiPad.TouchControls", 1);
+    CVarRegisterInteger("gSettings.SpaghettiPad.AutoHideTouchControls", 1);
     CVarRegisterInteger(
         "gSettings.SpaghettiPad.LegacyTouchControls", 0);
     CVarRegisterInteger("gSettings.SpaghettiPad.TiltSteering", 0);
     CVarRegisterFloat("gSettings.SpaghettiPad.TiltSensitivity", 1.0f);
     SpaghettiPad_InitializeTouchControls();
+    SpaghettiPad_SetTouchAutoHide(
+        CVarGetInteger("gSettings.SpaghettiPad.AutoHideTouchControls", 1));
     SpaghettiPad_SetTouchControlsEnabled(
         CVarGetInteger("gSettings.SpaghettiPad.TouchControls", 1));
     SpaghettiPad_SetLegacyTouchControlsEnabled(
